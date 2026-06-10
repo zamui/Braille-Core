@@ -1,6 +1,6 @@
 # Braille-Core
 Convert Images or Pixel Art to Braille Unicode
-{content:
+
 ⠀⣠⣤⣤⣤⣄⠀⠀⢀⣀⡀⠀⠀⠀⠀⠀⢀⡀⠀⠀⣠⣤⣤⣤⣄⠀⠀⣴⣦⠀⣴⣦⠀
 ⢰⣿⠋⠉⠉⢻⣷⠀⣿⡟⢿⣷⡀⢠⣾⠿⢿⣦⠀⠙⢻⣿⠋⠁⠀⣿⣿⠀⣿⣿⠀⠀
 ⢸⣿⠀⠀⣀⣾⡟⢰⣿⠃⠀⢿⣧⢸⣿⠀⠈⣿⡇⠀⠀⢸⣿⠀⠀⠀⣿⣿⠀⣿⣿⠀⠀
@@ -16,6 +16,5 @@ Convert Images or Pixel Art to Braille Unicode
 ⠀⠀⢿⣧⠀⠀⠀⠀⠀⠀⣾⡆⠀⢿⣧⡀⠀⢀⣿⡇⢸⣿⠻⣷⡄⠀⠀⠀⢸⣿⠀⠀⠀
 ⠀⠀⠘⢿⣦⣤⣄⣤⣼⡿⠁⠀⠀⠻⢿⣶⣾⠟⠀⠀⢸⣿⠀⠙⢿⣦⡀⢸⣿⣀⣀⣤
 ⠀⠀⠀⠀⠉⠉⠛⠋⠉⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠁⠀⠀⠀⠙⠁⠈⠛⠛⠛⠋
-}
 
 ![Braille Core](web/icon_256.png)
