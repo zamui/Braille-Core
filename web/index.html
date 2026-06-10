@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <div id="notification-center"></div>
+
+    <div id="sidebar">
+        <h2>BRAILLE CORE</h2>
+        
+        <div style="display: flex; gap: 5px;">
+            <button id="btn-edit" class="btn btn-toggle active-view" onclick="setViewMode('edit')">EDITOR</button>
+            <button id="btn-prev" class="btn btn-toggle" onclick="setViewMode('preview')">PREVIEW</button>
+        </div>
+
+        <div style="display: flex; gap: 5px; margin-top:5px;">
+            <button class="btn btn-toggle" onclick="executeUndo()">◀ UNDO</button>
+            <button class="btn btn-toggle" onclick="executeRedo()">REDO ▶</button>
+        </div>
+
+        <hr style="border-color:#00ff66; margin: 5px 0;">
+
+        <div>
+            <label>Import Image</label>
+            <input type="file" id="imageUploader" accept="image/*" style="margin-top:8px; width:100%; color:#fff;">
+        </div>
+
+        <div class="control-group">
+            <label>Brush Mode</label>
+            <div style="display:flex; gap:5px; margin-top:10px;">
+                <button id="brush-draw" class="btn btn-toggle active-view" style="padding:8px;" onclick="setBrushAction('draw')">DRAW</button>
+                <button id="brush-erase" class="btn btn-toggle btnRed" style="padding:8px; border-color:#ff0055; color:#ff0055;" onclick="setBrushAction('erase')">ERASE</button>
+                <button id="brush-fill" class="btn btn-toggle btnBlue" style="padding:8px; border-color:#00ffff; color:#00ffff;" onclick="setBrushAction('fill')">FILL</button>
+            </div>
+
+            <div class="control-group" style="margin-top: 15px;">
+                <label>Brush Size <span id="brush-size-lbl">1x1</span></label>
+                <input type="range" id="brushSize" min="1" max="9" step="2" value="1" style="width:100%; accent-color:#00ff66;">
+            </div>
+
+            <div class="control-group" style="margin-top: 15px;">
+                <label>Brush Shape</label>
+                <div style="display:flex; gap:5px; margin-top:5px;">
+                    <button id="shape-square" class="btn btn-toggle active-view" onclick="setBrushShape('square')">SQUARE</button>
+                    <button id="shape-round" class="btn btn-toggle" onclick="setBrushShape('round')">ROUND</button>
+                </div>
+            </div>
+            
+            <button class="btn" style="margin-top: 15px; width: 100%;" onclick="invertCanvasMatrix()">INVERT CANVAS</button>
+        </div>
+
+        <button class="btn" style="margin-top: 15px; width: 100%;" onclick="copyShadingArt()">COPY TO CLIPBOARD</button>
+        <button class="btn btn-toggle btnRed" onclick="clearCanvas()" style="border-color:#ff0055; color:#ff0055; margin-top: 5px;">CLEAR CANVAS</button>
+    </div>
+
+    <div id="workspace">
+        <div id="editor-canvas"></div>
+        <div id="preview-box"></div>
+
+        <div id="staging-overlay">
+            <h2 style="color:#ff0055; text-shadow: 0 0 8px #ff0055;">IMPORT</h2>
+            
+            <div id="staging-workspace">
+                <div id="staging-container">
+                    <img id="staging-img" src="" alt="Staging background initialization context canvas frame display utility asset text-less layout structure spacer">
+                    <div id="crop-box"></div>
+                </div>
+                
+                <div class="control-panel">
+                    <div class="control-group">
+                        <label>Processing Mode:</label>
+                        <div class="mode-selector">
+                            <button id="mode-auto" class="mode-btn selected" onclick="setProcessingMode('auto')">AUTO</button>
+                            <button id="mode-manual" class="mode-btn" onclick="setProcessingMode('manual')">MANUAL</button>
+                        </div>
+                    </div>
+
+                    <div class="control-group" id="manual-sliders" style="display:none;">
+                        <label>Manual Cutoff Threshold: <span id="thresh-lbl">128</span></label>
+                        <input type="range" id="stageThreshold" min="10" max="245" value="128">
+                    </div>
+
+                    <div class="control-group">
+                        <label>Line Outline Engine: <span id="edge-lbl">Off</span></label>
+                        <input type="range" id="edgeStrength" min="0" max="30" value="0">
+                    </div>
+                    
+                    <div class="control-group">
+                        <label>Crop Box Size Scale:</label>
+                        <input type="range" id="cropScale" min="10" max="80" value="40">
+                    </div>
+
+                    <div style="display:flex; flex-direction:column; align-items:center; gap:5px;">
+                        <span style="font-size:11px; color:#ff0055;">PREVIEW</span>
+                        <div id="staging-text-preview"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div style="display:flex; gap:10px; margin-top:5px;">
+                <button class="btn" onclick="generateFromCrop()">IMPORT</button>
+                <button class="btn" style="background:#ff0055; color:#fff;" onclick="cancelStaging()">CANCEL</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const DOTS_W = 62;
+        const DOTS_H = 60;
+        
+        let gridData = Array(DOTS_H).fill().map(() => Array(DOTS_W).fill(false));
+        let isDrawing = false;
+        let base64ImageRaw = null;
+
+        let undoStack = [];
+        let redoStack = [];
+        let previewDebounceTimer = null;
+
+        let currentBrushState = 'draw';
+        let currentBrushSize = 1;
+        let currentBrushShape = 'square';
+        let activeProcessingMode = "auto";
+
+        let backgroundProcesses = {};
+
+        // Window control bindings for pywebview
+        function closeApp() {
+            pywebview.api.close_app();
+        }
+
+        function minimizeApp() {
+            pywebview.api.minimize_app();
+        }
+
+        function triggerNotification(message, duration = 3000, processId = null) {
+            const container = document.getElementById('notification-center');
+            if (processId && document.getElementById(`proc-${processId}`)) return;
+
+            const toast = document.createElement('div');
+            toast.className = 'toast';
+            toast.innerHTML = `<span>${message}</span>`;
+            
+            if (processId) {
+                toast.id = `proc-${processId}`;
+                backgroundProcesses[processId] = toast;
+                container.appendChild(toast);
+            } else {
+                container.appendChild(toast);
+                setTimeout(() => {
+                    toast.style.animation = 'slideDown 0.15s reverse ease-in';
+                    setTimeout(() => toast.remove(), 140);
+                }, duration);
+            }
+        }
+
+        function clearBackgroundProcess(processId) {
+            const target = document.getElementById(`proc-${processId}`);
+            if (target) {
+                target.style.animation = 'slideDown 0.15s reverse ease-in';
+                setTimeout(() => {
+                    target.remove();
+                    delete backgroundProcesses[processId];
+                }, 140);
+            }
+        }
+
+        const canvas = document.getElementById('editor-canvas');
+        canvas.style.gridTemplateColumns = `repeat(${DOTS_W}, 1fr)`;
+        canvas.style.gridTemplateRows = `repeat(${DOTS_H}, 1fr)`;
+
+        for (let y = 0; y < DOTS_H; y++) {
+            for (let x = 0; x < DOTS_W; x++) {
+                const pixel = document.createElement('div');
+                pixel.className = 'pixel p-off';
+                pixel.id = `p-${x}-${y}`;
+                
+                pixel.addEventListener('mousedown', (e) => {
+                    if (currentBrushState === 'fill') {
+                        saveHistorySnapshot();
+                        executeFloodFill(x, y, gridData[y][x]);
+                    } else {
+                        saveHistorySnapshot();
+                        isDrawing = true;
+                        paintPixelAt(x, y);
+                    }
+                });
+                pixel.addEventListener('mouseenter', () => {
+                    if (isDrawing && currentBrushState !== 'fill') paintPixelAt(x, y);
+                    highlightBrushArea(x, y, true);
+                });
+                pixel.addEventListener('mouseleave', () => {
+                    highlightBrushArea(x, y, false);
+                });
+                canvas.appendChild(pixel);
+            }
+        }
+
+        window.addEventListener('mouseup', () => {
+            if(isDrawing) {
+                isDrawing = false;
+                pywebview.api.auto_save_art("autosave_braille", gridData);
+            }
+        });
+
+        // --- BRUSH CONTROLS BINDINGS ---
+        document.getElementById('brushSize').addEventListener('input', function() {
+            currentBrushSize = parseInt(this.value);
+            document.getElementById('brush-size-lbl').innerText = `${currentBrushSize}x${currentBrushSize}`;
+        });
+
+        function setBrushShape(shape) {
+            currentBrushShape = shape;
+            document.getElementById('shape-square').classList.toggle('active-view', shape === 'square');
+            document.getElementById('shape-round').classList.toggle('active-view', shape === 'round');
+        }
+
+        // --- PYWEBVIEW STARTUP AUTO-LOAD TRIGGER ---
+        window.addEventListener('pywebviewready', () => {
+            setTimeout(async () => {
+                let savedGrid = await pywebview.api.load_latest_autosave();
+                if (savedGrid && savedGrid.length > 0) {
+                    renderMatrixToCanvas(savedGrid);
+                    triggerNotification("Restored Auto-Save", 2500);
+                }
+            }, 500);
+        });
+
+        function setBrushAction(mode) {
+            currentBrushState = mode;
+            document.getElementById('brush-draw').classList.toggle('active-view', mode === 'draw');
+            document.getElementById('brush-erase').classList.toggle('active-view-red', mode === 'erase');
+            document.getElementById('brush-fill').classList.toggle('active-view-blue', mode === 'fill');
+        }
+
+        function checkBrushBounds(x, y, center_x, center_y) {
+            let dx = Math.abs(x - center_x);
+            let dy = Math.abs(y - center_y);
+            let distSq = (dx * dx) + (dy * dy);
+        
+            if (currentBrushShape === 'round') {
+                // For a size 3 brush (radius 1.5), setting the limit to 1.5 
+                // restricts it to a tight cross (5 pixels) rather than a 3x3 square (9 pixels)
+                let radius = currentBrushSize / 2;
+                if (currentBrushSize === 3) {
+                    return (dx + dy) <= 1; // Diamond/Cross shape for 3x3
+                }
+                return distSq <= (radius * radius); // True Euclidean circle for larger sizes
+            }
+    
+            // Default square bounds
+            return dx <= Math.floor(currentBrushSize / 2) && 
+                dy <= Math.floor(currentBrushSize / 2);
+        }
+
+        function highlightBrushArea(center_x, center_y, isHovering) {
+            if (currentBrushState === 'fill') return;
+            let radius = Math.floor(currentBrushSize / 2);
+
+            for (let y = -radius; y <= radius; y++) {
+                for (let x = -radius; x <= radius; x++) {
+                    let targetX = center_x + x;
+                    let targetY = center_y + y;
+
+                    if (targetX >= 0 && targetX < DOTS_W && targetY >= 0 && targetY < DOTS_H) {
+                        if (checkBrushBounds(targetX, targetY, center_x, center_y)) {
+                            let el = document.getElementById(`p-${targetX}-${targetY}`);
+                            if (el) {
+                                el.classList.toggle('p-hover', isHovering);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        function executeFloodFill(startX, startY, startColor) {
+            let targetColor = startColor;
+            let replacementColor = !startColor;
+            
+            if (targetColor === replacementColor) return;
+
+            let queue = [[startX, startY]];
+            
+            while(queue.length > 0) {
+                let [cx, cy] = queue.shift();
+                
+                if (cx >= 0 && cx < DOTS_W && cy >= 0 && cy < DOTS_H) {
+                    if (gridData[cy][cx] === targetColor) {
+                        gridData[cy][cx] = replacementColor;
+                        document.getElementById(`p-${cx}-${cy}`).className = 'pixel ' + (replacementColor ? 'p-on' : 'p-off');
+                        
+                        queue.push([cx + 1, cy]);
+                        queue.push([cx - 1, cy]);
+                        queue.push([cx, cy + 1]);
+                        queue.push([cx, cy - 1]);
+                    }
+                }
+            }
+            pywebview.api.auto_save_art("autosave_braille", gridData);
+        }
+
+        function invertCanvasMatrix() {
+            saveHistorySnapshot();
+            for (let y = 0; y < DOTS_H; y++) {
+                for (let x = 0; x < DOTS_W; x++) {
+                    gridData[y][x] = !gridData[y][x];
+                }
+            }
+            syncMatrixToViewportElements();
+            pywebview.api.auto_save_art("autosave_braille", gridData);
+            triggerNotification("Canvas Inverted", 2000);
+        }
+
+        function syncMatrixToViewportElements() {
+            for (let y = 0; y < DOTS_H; y++) {
+                for (let x = 0; x < DOTS_W; x++) {
+                    document.getElementById(`p-${x}-${y}`).className = 'pixel ' + (gridData[y][x] ? 'p-on' : 'p-off');
+                }
+            }
+        }
+
+        function saveHistorySnapshot() {
+            undoStack.push(JSON.parse(JSON.stringify(gridData)));
+            redoStack = [];
+        }
+
+        function executeUndo() {
+            if (undoStack.length === 0) return;
+            redoStack.push(JSON.parse(JSON.stringify(gridData)));
+            let historicGrid = undoStack.pop();
+            renderMatrixToCanvas(historicGrid);
+            pywebview.api.auto_save_art("autosave_braille", gridData);
+            triggerNotification("Undid Last Action", 1000);
+        }
+
+        function executeRedo() {
+            if (redoStack.length === 0) return;
+            undoStack.push(JSON.parse(JSON.stringify(gridData)));
+            let upcomingGrid = redoStack.pop();
+            renderMatrixToCanvas(upcomingGrid);
+            pywebview.api.auto_save_art("autosave_braille", gridData);
+            triggerNotification("Redid Last Action", 1000);
+        }
+
+        function paintPixelAt(center_x, center_y) {
+            let newState = (currentBrushState === 'draw');
+            let radius = Math.floor(currentBrushSize / 2);
+
+            for (let y = -radius; y <= radius; y++) {
+                for (let x = -radius; x <= radius; x++) {
+                    let targetX = center_x + x;
+                    let targetY = center_y + y;
+
+                    if (targetX >= 0 && targetX < DOTS_W && targetY >= 0 && targetY < DOTS_H) {
+                        if (checkBrushBounds(targetX, targetY, center_x, center_y)) {
+                            gridData[targetY][targetX] = newState;
+                            document.getElementById(`p-${targetX}-${targetY}`).className = 'pixel ' + (newState ? 'p-on' : 'p-off');
+                        }
+                    }
+                }
+            }
+        }
+
+        function clearCanvas() {
+            saveHistorySnapshot();
+            gridData = Array(DOTS_H).fill().map(() => Array(DOTS_W).fill(false));
+            syncMatrixToViewportElements();
+            triggerNotification("Canvas Reset", 2000);
+        }
+
+        function setViewMode(mode) {
+            if (mode === 'edit') {
+                document.getElementById('editor-canvas').style.display = 'grid';
+                document.getElementById('preview-box').style.display = 'none';
+                document.getElementById('btn-edit').classList.add('active-view');
+                document.getElementById('btn-prev').classList.remove('active-view');
+            } else {
+                updateTextPreview();
+                document.getElementById('editor-canvas').style.display = 'none';
+                document.getElementById('preview-box').style.display = 'block';
+                document.getElementById('btn-edit').classList.remove('active-view');
+                document.getElementById('btn-prev').classList.add('active-view');
+            }
+        }
+
+        async function updateTextPreview() {
+            let str = await pywebview.api.compile_grid_to_string(gridData);
+            document.getElementById('preview-box').innerText = str;
+        }
+
+        // --- STAGING CONTROLS ---
+        function setProcessingMode(mode) {
+            activeProcessingMode = mode;
+            document.getElementById('mode-auto').classList.toggle('selected', mode === 'auto');
+            document.getElementById('mode-manual').classList.toggle('selected', mode === 'manual');
+            document.getElementById('manual-sliders').style.display = (mode === 'manual') ? 'block' : 'none';
+            triggerLiveStagingPreview();
+        }
+
+        let cropState = { top: 25, left: 25, size: 40 };
+        let isDraggingCrop = false;
+        let dragStartX, dragStartY, initialLeft, initialTop;
+
+        const cropBox = document.getElementById('crop-box');
+        const imgEl = document.getElementById('staging-img');
+
+        document.getElementById('imageUploader').addEventListener('change', function(e) {
+            if(!e.target.files[0]) return;
+            let reader = new FileReader();
+            reader.onload = function(event) {
+                base64ImageRaw = event.target.result;
+                imgEl.src = base64ImageRaw;
+                document.getElementById('staging-overlay').style.display = 'flex';
+                imgEl.onload = function() {
+                    resetCropOverlayBox();
+                }
+            };
+            reader.readAsDataURL(e.target.files[0]);
+        });
+
+        document.getElementById('stageThreshold').addEventListener('input', function() {
+            document.getElementById('thresh-lbl').innerText = this.value;
+            debounceStagingRefresh();
+        });
+
+        document.getElementById('edgeStrength').addEventListener('input', function() {
+            let val = parseInt(this.value);
+            document.getElementById('edge-lbl').innerText = val === 0 ? "Off" : `Level ${val}`;
+            debounceStagingRefresh();
+        });
+
+        document.getElementById('cropScale').addEventListener('input', function() {
+            cropState.size = parseInt(this.value);
+            clampCropBounds();
+            updateCropBoxVisuals();
+            debounceStagingRefresh();
+        });
+
+        function debounceStagingRefresh() {
+            clearTimeout(previewDebounceTimer);
+            previewDebounceTimer = setTimeout(triggerLiveStagingPreview, 120);
+        }
+
+        function resetCropOverlayBox() {
+            cropState.size = 40;
+            cropState.top = 10;
+            cropState.left = 10;
+            document.getElementById('cropScale').value = 40;
+            document.getElementById('edgeStrength').value = 0;
+            document.getElementById('edge-lbl').innerText = "Off";
+            setProcessingMode('auto');
+            updateCropBoxVisuals();
+        }
+
+        function clampCropBounds() {
+            let imgW = imgEl.clientWidth;
+            let imgH = imgEl.clientHeight;
+            let boxPixelSize = (cropState.size / 100) * imgW;
+            
+            let maxLeftPct = 100 - cropState.size;
+            let maxTopPct = ((imgH - boxPixelSize) / imgH) * 100;
+
+            if (cropState.left < 0) cropState.left = 0;
+            if (cropState.top < 0) cropState.top = 0;
+            if (cropState.left > maxLeftPct) cropState.left = maxLeftPct;
+            if (cropState.top > maxTopPct) cropState.top = maxTopPct;
+        }
+
+        function updateCropBoxVisuals() {
+            let leftOffset = imgEl.offsetLeft;
+            let topOffset = imgEl.offsetTop;
+            let imgW = imgEl.clientWidth;
+            let imgH = imgEl.clientHeight;
+            let boxSizePx = (cropState.size / 100) * imgW;
+
+            cropBox.style.width = boxSizePx + 'px';
+            cropBox.style.height = boxSizePx + 'px'; 
+            cropBox.style.left = (leftOffset + (cropState.left / 100) * imgW) + 'px';
+            cropBox.style.top = (topOffset + (cropState.top / 100) * imgH) + 'px';
+        }
+
+        cropBox.addEventListener('mousedown', function(e) {
+            isDraggingCrop = true;
+            dragStartX = e.clientX;
+            dragStartY = e.clientY;
+            initialLeft = cropState.left;
+            initialTop = cropState.top;
+            e.preventDefault();
+        });
+
+        window.addEventListener('mousemove', function(e) {
+            if(!isDraggingCrop) return;
+            let dx = e.clientX - dragStartX;
+            let dy = e.clientY - dragStartY;
+            let imgW = imgEl.clientWidth;
+            let imgH = imgEl.clientHeight;
+
+            cropState.left = initialLeft + (dx / imgW * 100);
+            cropState.top = initialTop + (dy / imgH * 100);
+
+            clampCropBounds();
+            updateCropBoxVisuals();
+        });
+
+        window.addEventListener('mouseup', () => {
+            if(isDraggingCrop) {
+                isDraggingCrop = false;
+                triggerLiveStagingPreview();
+            }
+        });
+
+        async function triggerLiveStagingPreview() {
+            if (!base64ImageRaw) return;
+            let threshVal = parseInt(document.getElementById('stageThreshold').value);
+            let edgeVal = parseInt(document.getElementById('edgeStrength').value);
+
+            let imgW = imgEl.clientWidth;
+            let imgH = imgEl.clientHeight;
+            let boxPixelSize = (cropState.size / 100) * imgW;
+            let finalPctWidth = cropState.size;
+            let finalPctHeight = (boxPixelSize / imgH) * 100;
+
+            triggerNotification("Loading...", 0, "preview_render");
+
+            let response = await pywebview.api.process_cropped_image(
+                base64ImageRaw, 
+                cropState.left, cropState.top, finalPctWidth, finalPctHeight,
+                activeProcessingMode, threshVal, edgeVal
+            );
+
+            if (response.status === "success") {
+                if (activeProcessingMode === "auto" && response.auto_thresh) {
+                    document.getElementById('stageThreshold').value = response.auto_thresh;
+                    document.getElementById('thresh-lbl').innerText = response.auto_thresh + " (Auto)";
+                }
+                let brailleStr = await pywebview.api.compile_grid_to_string(response.grid);
+                document.getElementById('staging-text-preview').innerText = brailleStr;
+            }
+            clearBackgroundProcess("preview_render");
+        }
+
+        async function generateFromCrop() {
+            let threshVal = parseInt(document.getElementById('stageThreshold').value);
+            let edgeVal = parseInt(document.getElementById('edgeStrength').value);
+
+            let imgW = imgEl.clientWidth;
+            let imgH = imgEl.clientHeight;
+            let boxPixelSize = (cropState.size / 100) * imgW;
+            let finalPctWidth = cropState.size;
+            let finalPctHeight = (boxPixelSize / imgH) * 100;
+
+            saveHistorySnapshot();
+            triggerNotification("Loading...", 0, "main_gen");
+
+            let response = await pywebview.api.process_cropped_image(
+                base64ImageRaw, 
+                cropState.left, cropState.top, finalPctWidth, finalPctHeight,
+                activeProcessingMode, threshVal, edgeVal
+            );
+            
+            if (response.status === "success") {
+                renderMatrixToCanvas(response.grid);
+                document.getElementById('staging-overlay').style.display = 'none';
+                triggerNotification("Import Complete", 2500);
+            }
+            clearBackgroundProcess("main_gen");
+        }
+
+        function renderMatrixToCanvas(incomingGrid) {
+            gridData = incomingGrid;
+            canvas.innerHTML = "";
+            
+            for (let y = 0; y < DOTS_H; y++) {
+                for (let x = 0; x < DOTS_W; x++) {
+                    const pixel = document.createElement('div');
+                    const isActive = gridData[y][x];
+                    pixel.className = 'pixel ' + (isActive ? 'p-on' : 'p-off');
+                    pixel.id = `p-${x}-${y}`;
+                    
+                    pixel.addEventListener('mousedown', (e) => {
+                        if (currentBrushState === 'fill') {
+                            saveHistorySnapshot();
+                            executeFloodFill(x, y, gridData[y][x]);
+                        } else {
+                            saveHistorySnapshot();
+                            isDrawing = true;
+                            paintPixelAt(x, y);
+                        }
+                    });
+                    pixel.addEventListener('mouseenter', () => {
+                        if (isDrawing && currentBrushState !== 'fill') paintPixelAt(x, y);
+                        highlightBrushArea(x, y, true);
+                    });
+                    pixel.addEventListener('mouseleave', () => {
+                        highlightBrushArea(x, y, false);
+                    });
+                    canvas.appendChild(pixel);
+                }
+            }
+        }
+
+        function cancelStaging() {
+            document.getElementById('staging-overlay').style.display = 'none';
+            document.getElementById('imageUploader').value = "";
+            triggerNotification("Import Canceled", 1500);
+        }
+
+        async function copyShadingArt() {
+            await pywebview.api.copy_text_art(gridData);
+            triggerNotification("Copied to Clipboard", 3000);
+        }
+    </script>
+</body>
+</html>
