@@ -1,2 +1,6 @@
 # Braille-Core
- Convert Images to Braille and Pixel Art to Braille
+Convert Images or Pixel Art to Braille Unicode
+
+
+
+![Braille Core](web/icon_256.png)
