@@ -125,7 +125,6 @@
 
         let backgroundProcesses = {};
 
-        // Window control bindings for pywebview
         function closeApp() {
             pywebview.api.close_app();
         }
@@ -204,7 +203,6 @@
             }
         });
 
-        // --- BRUSH CONTROLS BINDINGS ---
         document.getElementById('brushSize').addEventListener('input', function() {
             currentBrushSize = parseInt(this.value);
             document.getElementById('brush-size-lbl').innerText = `${currentBrushSize}x${currentBrushSize}`;
@@ -216,7 +214,6 @@
             document.getElementById('shape-round').classList.toggle('active-view', shape === 'round');
         }
 
-        // --- PYWEBVIEW STARTUP AUTO-LOAD TRIGGER ---
         window.addEventListener('pywebviewready', () => {
             setTimeout(async () => {
                 let savedGrid = await pywebview.api.load_latest_autosave();
@@ -240,16 +237,13 @@
             let distSq = (dx * dx) + (dy * dy);
         
             if (currentBrushShape === 'round') {
-                // For a size 3 brush (radius 1.5), setting the limit to 1.5 
-                // restricts it to a tight cross (5 pixels) rather than a 3x3 square (9 pixels)
                 let radius = currentBrushSize / 2;
                 if (currentBrushSize === 3) {
-                    return (dx + dy) <= 1; // Diamond/Cross shape for 3x3
+                    return (dx + dy) <= 1;
                 }
-                return distSq <= (radius * radius); // True Euclidean circle for larger sizes
+                return distSq <= (radius * radius); 
             }
     
-            // Default square bounds
             return dx <= Math.floor(currentBrushSize / 2) && 
                 dy <= Math.floor(currentBrushSize / 2);
         }
@@ -390,7 +384,6 @@
             document.getElementById('preview-box').innerText = str;
         }
 
-        // --- STAGING CONTROLS ---
         function setProcessingMode(mode) {
             activeProcessingMode = mode;
             document.getElementById('mode-auto').classList.toggle('selected', mode === 'auto');
