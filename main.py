@@ -180,7 +180,6 @@ class Api:
 if __name__ == '__main__':
     api = Api()
     
-    # Launch the native frameless window
     webview.create_window(
         'Braille Core', 
         'web/index.html', 
