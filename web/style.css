@@ -118,7 +118,7 @@ h2 {
     display: flex;
     flex-direction: column;
     gap: 8px;
-    align-items: flex-end; /* CRITICAL: Prevents children from stretching to the widest item */
+    align-items: flex-end;
     z-index: 1000;
 }
 
@@ -132,8 +132,8 @@ h2 {
     font-size: 12px;
     box-shadow: 0 0 10px rgba(0, 255, 102, 0.2);
     animation: slideDown 0.25s ease-in-out forwards;
-    width: auto;       /* Allows the toast to shrink/grow to its own content */
-    max-width: 320px;  /* Keeps extremely long messages from breaking the layout */
+    width: auto;
+    max-width: 320px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
